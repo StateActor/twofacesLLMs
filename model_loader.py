@@ -1,20 +1,19 @@
 import torch
  
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+import os
+from google import genai
 
-MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
+GOOGLEAI_KEY = os.getenv("GOOGLEAI_KEY")
 
-class ModelLoader:
-    def __init__(
-        self,
-        model_name: str = MODEL_NAME,
-    ):
-        self.model_name = model_name
+class QwenLoader:
+    def __init__(self):
+        self.model_name = "Qwen/Qwen2.5-7B-Instruct"
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
  
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
         self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
+            self.model_name,
             torch_dtype="auto",
             device_map="auto",
             trust_remote_code=True,
@@ -44,3 +43,17 @@ class ModelLoader:
         history = ([{"role": "system", "content": system}] if system else [])
         history.append({"role": "user", "content": prompt})
         return self.chat(history)
+    
+class GemmaLoader:
+    def __init__(self):
+        if not GOOGLEAI_KEY:
+            raise EnvironmentError("Gemma API key not set.")
+        self.client = genai.Client(api_key=GOOGLEAI_KEY)
+        self.model_name = "gemini-3.1-flash-lite"#"gemma-4-31b-it"
+
+    def helper_chat(self, prompt: str, system: str | None = None) -> str:
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt
+        )
+        return response.text.strip()
