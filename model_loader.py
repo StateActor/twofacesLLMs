@@ -1,14 +1,21 @@
 import torch
- 
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 import os
-from google import genai
 
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from google import genai
+from google.genai import types as genai_types
+from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
 GOOGLEAI_KEY = os.getenv("GOOGLEAI_KEY")
 
 class QwenLoader:
-    def __init__(self):
-        self.model_name = "Qwen/Qwen2.5-7B-Instruct"
+    DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL):
+        print(f"Loading local model: {model_name}")
+        self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
  
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
@@ -45,11 +52,13 @@ class QwenLoader:
         return self.chat(history)
     
 class GemmaLoader:
-    def __init__(self):
+    DEFAULT_MODEL = "gemini-3.1-flash-lite"#"gemma-4-31b-it"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL):
         if not GOOGLEAI_KEY:
             raise EnvironmentError("Gemma API key not set.")
         self.client = genai.Client(api_key=GOOGLEAI_KEY)
-        self.model_name = "gemini-3.1-flash-lite"#"gemma-4-31b-it"
+        self.model_name = model_name
 
     def helper_chat(self, prompt: str, system: str | None = None) -> str:
         response = self.client.models.generate_content(
@@ -57,3 +66,76 @@ class GemmaLoader:
             contents=prompt
         )
         return response.text.strip()
+
+class GeminiJudge:
+    DEFAULT_MODEL = "models/gemma-4-31b-it"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL, api_key: str | None = None):
+        key = api_key or os.getenv("GEMINI_KEY")
+        if not key:
+            raise EnvironmentError("Gemini API key not set.")
+        self.client = genai.Client(api_key=key)
+        self.model_name = model_name
+        self._types = genai_types
+
+    def generate(self, prompt: str) -> str:
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=self._types.GenerateContentConfig(temperature=0),
+        )
+        return response.text.strip()
+
+
+class GroqJudge:
+    DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL, api_key: str | None = None):
+        key = api_key or os.getenv("GROQ_API_KEY")
+        if not key:
+            raise EnvironmentError("Groq API key not set (GROQ_API_KEY).")
+        self.client = Groq(api_key=key)
+        self.model_name = model_name
+
+    def generate(self, prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=64,
+        )
+        return response.choices[0].message.content.strip()
+
+
+class LocalJudge:
+    DEFAULT_MODEL = "google/gemma-2-2b-it"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL):
+        print(f"Loading local model: {model_name}")
+        self.model_name = model_name
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+ 
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            torch_dtype="auto",
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        self.pipe = pipeline(
+            "text-generation",
+            model=self.model,
+            tokenizer=self.tokenizer,
+            max_new_tokens=64,
+            temperature=0.1,
+            do_sample=True,
+            return_full_text=False,
+        )
+
+    def generate(self, prompt: str) -> str:
+        messages = [{"role": "user", "content": prompt}]
+        formatted = self.pipe.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        output = self.pipe(formatted)
+        return output[0]["generated_text"].strip()
