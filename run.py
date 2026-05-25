@@ -3,6 +3,10 @@ from model_loader import QwenLoader, GemmaLoader, LocalJudge
 from judge import Judge
 
 import pandas as pd
+import json
+
+#https://huggingface.co/datasets/walledai/CatHarmfulQA
+DF_FILEPATH = "data/en-00000-of-00001.parquet"
 
 def gen_adv_prompt(helper_model, attack_model, request: str) -> tuple[str, str, str]:
     """Generate input prompts"""
@@ -70,10 +74,7 @@ def run_adv_prompt(attack_model, bio: str, int_prompt: str, adv_prompt: str) -> 
 
 def gen_dataset():
     """Loads datafile and splits into categories"""
-    #https://huggingface.co/datasets/walledai/CatHarmfulQA
-    file_path = "data/en-00000-of-00001.parquet"
-
-    df = pd.read_parquet(file_path)
+    df = pd.read_parquet(DF_FILEPATH)
 
     #filter on category
     hate_df = df[df["category"] == "Hate/Harass/Violence"]
@@ -136,7 +137,7 @@ def run():
     requests_hate, requests_other = gen_dataset()
 
     #generate a random #n amount of prompts
-    requests = requests_hate.sample(n=1)
+    requests = requests_hate.sample(n=2)
     
     #generate prompt, response pairs
     pairs = []
@@ -156,15 +157,19 @@ def run():
 
         pairs.append({
             "id": i,
-            "harmful_request": request,
+            "harmful_request": request.prompt,
             "reply": adv_response
         })
 
     #judge scores the prompt, response pairs
     results = judge.score_batch(pairs)
 
+    #save results to json
+    with open("data/results.json", "w") as f:
+        json.dump(results, f, indent=4)
+
     for r in results:
-        print(f"[id={r['id']}] score={r['score']}")
+        print(f"[id={r['id']}], [prompt={r['harmful_request']}] ,score={r['score']}")
 
 if __name__ == "__main__":
     run()
