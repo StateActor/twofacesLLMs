@@ -60,12 +60,23 @@ class GemmaLoader:
         self.client = genai.Client(api_key=GOOGLEAI_KEY)
         self.model_name = model_name
 
-    def helper_chat(self, prompt: str, system: str | None = None) -> str:
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt
-        )
-        return response.text.strip()
+    def helper_chat(self, prompt: str, system: str | None = None, retries: int = 5) -> str:
+        # adds time-outs to avoid rate limit violation
+        for attempt in range(retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt
+                )
+                return response.text.strip()
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 30 * (attempt + 1)  # 30s, 60s, 90s...
+                    print(f"[WARN] Rate limited, waiting {wait}s (attempt {attempt + 1}/{retries})...")
+                    time.sleep(wait)
+                else:
+                    raise
+        raise RuntimeError(f"Gemini rate limit exceeded after {retries} retries")
 
 class GeminiJudge:
     DEFAULT_MODEL = "models/gemma-4-31b-it"
