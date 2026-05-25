@@ -1,6 +1,7 @@
 from persona_generator import PersonaGenerator
 from model_loader import QwenLoader, GemmaLoader, LocalJudge
 from judge import Judge
+import json
 
 import pandas as pd
 import json
@@ -128,10 +129,18 @@ def verify_prompt(bio: str, int_prompt: str, adv_prompt: str) -> bool:
 
     return True
 
+def append_result(filepath: str, result: dict) -> None:
+    with open(filepath, "a") as f:  # "a" = append, not overwrite
+        f.write(json.dumps(result) + "\n")
+
 def run():
     helper_model = GemmaLoader()
     attack_model = QwenLoader()
     judge = Judge(LocalJudge())
+
+    from pathlib import Path
+    safe_name = attack_model.model_name.replace("/", "_")
+    filepath = Path(__file__).parent / f"results_{attack_model.model_name}.jsonl"
 
     #sample a dataset split for both hatespeech and all other requests
     requests_hate, requests_other = gen_dataset()
@@ -155,14 +164,32 @@ def run():
         #run persona attack
         adv_response = run_adv_prompt(attack_model, bio, int_prompt, adv_prompt)
 
-        pairs.append({
+        score = judge.score(request, adv_response)
+
+        entry = {
+            "id": request.Index,
+            "model": attack_model.model_name,
+            "harmful_request": request.prompt,
+            "category": request.category,
+            "subcategory": request.subcategory,
+            "score": score["score"],
+            "raw_score": score["raw_response"],
+            "reply": adv_response,
+            "bio": bio,
+            "int_prompt": int_prompt,
+            "adv_prompt": adv_prompt
+        }
+
+        append_result(filepath, entry)
+
+        """ pairs.append({
             "id": i,
             "harmful_request": request.prompt,
             "reply": adv_response
         })
 
     #judge scores the prompt, response pairs
-    results = judge.score_batch(pairs)
+    """ results = judge.score_batch(pairs)
 
     #save results to json
     with open("data/results.json", "w") as f:
