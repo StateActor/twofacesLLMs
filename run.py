@@ -138,6 +138,7 @@ def run():
     judge = Judge(LocalJudge())
 
     from pathlib import Path
+    safe_name = attack_model.model_name.replace("/", "_")
     filepath = Path(__file__).parent / f"results_{attack_model.model_name}.jsonl"
 
     #sample a dataset split for both hatespeech and all other requests
