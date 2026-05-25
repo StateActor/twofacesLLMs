@@ -133,12 +133,12 @@ def append_result(filepath: str, result: dict) -> None:
         f.write(json.dumps(result) + "\n")
 
 def run():
-    from pathlib import Path
-    filepath = Path(__file__).parent / "results.jsonl"
-    
     helper_model = GemmaLoader()
     attack_model = QwenLoader()
     judge = Judge(LocalJudge())
+
+    from pathlib import Path
+    filepath = Path(__file__).parent / f"results_{attack_model.model_name}.jsonl"
 
     #sample a dataset split for both hatespeech and all other requests
     requests_hate, requests_other = gen_dataset()
