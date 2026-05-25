@@ -78,6 +78,52 @@ class GemmaLoader:
                     raise
         raise RuntimeError(f"Gemini rate limit exceeded after {retries} retries")
 
+class GroqLoader:
+    DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL, api_key: str | None = None):
+        key = api_key or os.getenv("GROQ_API_KEY")
+        if not key:
+            raise EnvironmentError("Groq API key not set (GROQ_API_KEY).")
+        self.client = Groq(api_key=key)
+        self.model_name = model_name
+
+    def chat(
+        self,
+        history: list[dict],
+        max_new_tokens: int = 1500,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        repetition_penalty: float = 1.05,
+        retries: int = 5,
+    ) -> str:
+        for attempt in range(retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=history,
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_tokens=max_new_tokens,
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                if "429" in str(e) or "rate_limit" in str(e).lower():
+                    wait = 30 * (attempt + 1)  # 30s, 60s, 90s...
+                    print(f"[WARN] Rate limited, waiting {wait}s (attempt {attempt + 1}/{retries})...")
+                    time.sleep(wait)
+                else:
+                    raise
+        raise RuntimeError(f"Groq rate limit exceeded after {retries} retries")
+
+    def chat_single(self, prompt: str, system: str | None = None) -> str:
+        history = ([{"role": "system", "content": system}] if system else [])
+        history.append({"role": "user", "content": prompt})
+        return self.chat(history)
+
+    def helper_chat(self, prompt: str, system: str | None = None) -> str:
+        return self.chat_single(prompt, system)
+
 class GeminiJudge:
     DEFAULT_MODEL = "models/gemma-4-31b-it"
 
@@ -96,7 +142,6 @@ class GeminiJudge:
             config=self._types.GenerateContentConfig(temperature=0),
         )
         return response.text.strip()
-
 
 class GroqJudge:
     DEFAULT_MODEL = "llama-3.3-70b-versatile"
