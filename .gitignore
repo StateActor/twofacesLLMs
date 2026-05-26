@@ -5,9 +5,5 @@ __pycache__/
 #venv
 persona/
 
-<<<<<<< HEAD
-#api
-=======
 #api keys
->>>>>>> 052a62b5de277303ef3a33ed0afc30b2be454a38
 .env

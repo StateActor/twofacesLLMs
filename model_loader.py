@@ -4,11 +4,49 @@ import os
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from google import genai
 from google.genai import types as genai_types
+from openai import OpenAI
 from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 GOOGLEAI_KEY = os.getenv("GOOGLEAI_KEY")
+OPENROUTER_KEY = os.getenv("OPENROUTER_KEY")
+
+class OpenRouterLoader:
+    DEFAULT_MODEL = "meta-llama/llama-3.3-70b-instruct"
+
+    def __init__(self, model_name: str = DEFAULT_MODEL):
+        if not OPENROUTER_KEY:
+            raise EnvironmentError("OPENROUTER_KEY environment variable not set.")
+        print(f"Loading OpenRouter model: {model_name}")
+        self.model_name = model_name
+        self.client = OpenAI(
+            api_key=OPENROUTER_KEY,
+            base_url="https://openrouter.ai/api/v1",
+        )
+ 
+    def chat(
+        self,
+        history: list[dict],
+        max_new_tokens: int = 1500,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        repetition_penalty: float = 1.05,
+    ) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=history,
+            max_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        )
+        return response.choices[0].message.content.strip()
+ 
+    def chat_single(self, prompt: str, system: str | None = None) -> str:
+        history = ([{"role": "system", "content": system}] if system else [])
+        history.append({"role": "user", "content": prompt})
+        return self.chat(history)
+
 
 class QwenLoader:
     DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct"
@@ -57,15 +95,27 @@ class GemmaLoader:
     def __init__(self, model_name: str = DEFAULT_MODEL):
         if not GOOGLEAI_KEY:
             raise EnvironmentError("Gemma API key not set.")
+        print(f"Loading Google model: {model_name}")
         self.client = genai.Client(api_key=GOOGLEAI_KEY)
         self.model_name = model_name
 
-    def helper_chat(self, prompt: str, system: str | None = None) -> str:
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=prompt
-        )
-        return response.text.strip()
+    def helper_chat(self, prompt: str, system: str | None = None, retries: int = 5) -> str:
+        # adds time-outs to avoid rate limit violation
+        for attempt in range(retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt
+                )
+                return response.text.strip()
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 30 * (attempt + 1)  # 30s, 60s, 90s...
+                    print(f"[WARN] Rate limited, waiting {wait}s (attempt {attempt + 1}/{retries})...")
+                    time.sleep(wait)
+                else:
+                    raise
+        raise RuntimeError(f"Gemini rate limit exceeded after {retries} retries")
 
 class GroqLoader:
     DEFAULT_MODEL = "llama-3.3-70b-versatile"
