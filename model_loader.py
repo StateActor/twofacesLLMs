@@ -31,7 +31,6 @@ class OpenRouterLoader:
         max_new_tokens: int = 1500,
         temperature: float = 0.7,
         top_p: float = 0.9,
-        repetition_penalty: float = 1.05,
     ) -> str:
         response = self.client.chat.completions.create(
             model=self.model_name,
